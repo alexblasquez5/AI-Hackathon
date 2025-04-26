@@ -9,18 +9,12 @@ import pandas as pd
 # --- Helper functions ---
 
 def calculate_angle(a, b, c):
-    """Calculate angle between three points"""
-    a = np.array(a)
-    b = np.array(b)
-    c = np.array(c)
+    a, b, c = np.array(a), np.array(b), np.array(c)
     radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
     angle = np.abs(radians * 180.0 / np.pi)
-    if angle > 180.0:
-        angle = 360 - angle
-    return angle
+    return 360 - angle if angle > 180.0 else angle
 
 def colorize_angle(angle, joint_name):
-    """Return markdown-colored angle text based on thresholds"""
     color = "gray"
     if joint_name == "knee":
         if 160 <= angle <= 180:
@@ -39,76 +33,45 @@ def colorize_angle(angle, joint_name):
     return f"<span style='color:{color}'>{int(angle)}°</span>"
 
 def posture_score(avg_knee, avg_elbow, avg_shoulder):
-    """Calculate athlete score based on posture"""
     score = 0
-    if 160 <= avg_knee <= 180:
-        score += 30
-    elif 140 <= avg_knee < 160:
-        score += 15
-    if 70 <= avg_elbow <= 110:
-        score += 30
-    elif 50 <= avg_elbow < 70 or 110 < avg_elbow <= 130:
-        score += 15
-    if 70 <= avg_shoulder <= 110:
-        score += 30
-    elif 50 <= avg_shoulder < 70 or 110 < avg_shoulder <= 130:
-        score += 15
+    for angle, low, high in [(avg_knee, 160, 180), (avg_elbow, 70, 110), (avg_shoulder, 70, 110)]:
+        if low <= angle <= high:
+            score += 30
+        elif (low-20) <= angle < low or high < angle <= (high+20):
+            score += 15
     return score
 
 def colorize_score(score):
-    """Color the athlete score based on value"""
     if score >= 75:
-        return f"<span style='color:green; font-size:24px'><b>{score} / 90</b></span>"
+        color = "green"
     elif score >= 45:
-        return f"<span style='color:orange; font-size:24px'><b>{score} / 90</b></span>"
+        color = "orange"
     else:
-        return f"<span style='color:red; font-size:24px'><b>{score} / 90</b></span>"
+        color = "red"
+    return f"<span style='color:{color}; font-size:24px'><b>{score} / 90</b></span>"
 
 def generate_report(avg_knee, avg_elbow, avg_shoulder, best_knee, best_knee_time, worst_elbow, worst_elbow_time, score):
-    """Create DataFrame for report"""
     quality = []
-
-    if 160 <= avg_knee <= 180:
-        quality.append("Good Knee Posture")
-    else:
-        quality.append("Needs Improvement")
-
-    if 70 <= avg_elbow <= 110:
-        quality.append("Good Elbow Posture")
-    else:
-        quality.append("Needs Improvement")
-
-    if 70 <= avg_shoulder <= 110:
-        quality.append("Good Shoulder Posture")
-    else:
-        quality.append("Needs Improvement")
-
+    for avg, joint in [(avg_knee, "Knee"), (avg_elbow, "Elbow"), (avg_shoulder, "Shoulder")]:
+        if 160 <= avg <= 180 or 70 <= avg <= 110:
+            quality.append(f"Good {joint} Posture")
+        else:
+            quality.append("Needs Improvement")
     data = {
         "Metric": [
-            "Avg Right Knee Angle",
-            "Avg Right Elbow Angle",
-            "Avg Right Shoulder Angle",
-            "Best Right Knee Angle (max)",
-            "Best Knee Timestamp (sec)",
-            "Worst Right Elbow Angle (min)",
-            "Worst Elbow Timestamp (sec)",
-            "Posture Quality",
-            "Athlete Score (out of 90)"
+            "Avg Right Knee Angle", "Avg Right Elbow Angle", "Avg Right Shoulder Angle",
+            "Best Right Knee Angle (max)", "Best Knee Timestamp (sec)",
+            "Worst Right Elbow Angle (min)", "Worst Elbow Timestamp (sec)",
+            "Posture Quality", "Athlete Score (out of 90)"
         ],
         "Value": [
-            f"{int(avg_knee)}°",
-            f"{int(avg_elbow)}°",
-            f"{int(avg_shoulder)}°",
-            f"{int(best_knee)}°",
-            f"{best_knee_time:.2f} sec",
-            f"{int(worst_elbow)}°",
-            f"{worst_elbow_time:.2f} sec",
-            ", ".join(quality),
-            f"{score} / 90"
+            f"{int(avg_knee)}°", f"{int(avg_elbow)}°", f"{int(avg_shoulder)}°",
+            f"{int(best_knee)}°", f"{best_knee_time:.2f} sec",
+            f"{int(worst_elbow)}°", f"{worst_elbow_time:.2f} sec",
+            ", ".join(quality), f"{score} / 90"
         ]
     }
-    df = pd.DataFrame(data)
-    return df
+    return pd.DataFrame(data)
 
 # --- MediaPipe setup ---
 mp_pose = mp.solutions.pose
@@ -117,118 +80,29 @@ mp_drawing = mp.solutions.drawing_utils
 
 # --- Streamlit setup ---
 st.title("Athlete Pose Analyzer")
-st.write("Upload an image or video and we'll analyze your posture and generate a full performance report!")
 
-rotate_option = st.sidebar.selectbox(
-    "Rotate video (only if needed):",
-    ("None", "90°", "180°", "270°")
-)
+mode = st.sidebar.radio("Select Mode:", ("Upload Image/Video", "Live Camera"))
 
-allowed_image_types = ["jpg", "jpeg", "png"]
-allowed_video_types = ["mp4", "mov", "avi"]
+if mode == "Upload Image/Video":
+    st.write("Upload an image or video, and we'll detect the athlete's pose!")
 
-uploaded_file = st.file_uploader("Upload an image or video", type=allowed_image_types + allowed_video_types)
+    rotate_option = st.sidebar.selectbox("Rotate video (only if needed):", ("None", "90°", "180°", "270°"))
+    allowed_image_types = ["jpg", "jpeg", "png"]
+    allowed_video_types = ["mp4", "mov", "avi"]
+    uploaded_file = st.file_uploader("Upload an image or video", type=allowed_image_types + allowed_video_types)
 
-if uploaded_file is not None:
-    file_extension = os.path.splitext(uploaded_file.name)[1][1:].lower()
+    if uploaded_file:
+        file_extension = os.path.splitext(uploaded_file.name)[1][1:].lower()
 
-    if file_extension in allowed_image_types:
-        # --- Process Image ---
-        file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
-        image = cv2.imdecode(file_bytes, 1)
-        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-        results = pose.process(image_rgb)
-
-        if results.pose_landmarks:
-            mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
-            landmarks = results.pose_landmarks.landmark
-
-            hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-            knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-            ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
-            shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
-            elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
-            wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
-            neck = [(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x + landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x) / 2,
-                    (landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y + landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y) / 2]
-
-            right_knee_angle = calculate_angle(hip, knee, ankle)
-            right_elbow_angle = calculate_angle(shoulder, elbow, wrist)
-            right_shoulder_angle = calculate_angle(neck, shoulder, elbow)
-
-            st.subheader("📈 Athlete Stats:")
-            st.markdown(f"""
-            - **Right Knee Angle:** {colorize_angle(right_knee_angle, 'knee')}
-            - **Right Elbow Angle:** {colorize_angle(right_elbow_angle, 'elbow')}
-            - **Right Shoulder Angle:** {colorize_angle(right_shoulder_angle, 'shoulder')}
-            """, unsafe_allow_html=True)
-
-            score = posture_score(right_knee_angle, right_elbow_angle, right_shoulder_angle)
-
-            st.subheader("🏆 Posture Quality Assessment")
-            st.write(", ".join([
-                "Good Knee Posture" if 160 <= right_knee_angle <= 180 else "Needs Improvement",
-                "Good Elbow Posture" if 70 <= right_elbow_angle <= 110 else "Needs Improvement",
-                "Good Shoulder Posture" if 70 <= right_shoulder_angle <= 110 else "Needs Improvement"
-            ]))
-
-            st.subheader("🏅 Athlete Score")
-            st.markdown(colorize_score(score), unsafe_allow_html=True)
-
-            report_df = generate_report(right_knee_angle, right_elbow_angle, right_shoulder_angle,
-                                         right_knee_angle, 0, right_elbow_angle, 0, score)
-            csv = report_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Performance Report",
-                data=csv,
-                file_name='performance_report.csv',
-                mime='text/csv'
-            )
-
-        st.image(image, channels="BGR", caption="Processed Image")
-
-    elif file_extension in allowed_video_types:
-        # --- Process Video ---
-        tfile = tempfile.NamedTemporaryFile(delete=False)
-        tfile.write(uploaded_file.read())
-        cap = cv2.VideoCapture(tfile.name)
-
-        stframe = st.empty()
-        statframe = st.empty()
-
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        frame_num = 0
-
-        knee_angles, elbow_angles, shoulder_angles = [], [], []
-        best_knee_angle, worst_elbow_angle = 0, 180
-        best_knee_frame, worst_elbow_frame = 0, 0
-
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret:
-                break
-
-            frame = cv2.resize(frame, (640, 480))
-
-            if rotate_option == "90°":
-                frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-            elif rotate_option == "180°":
-                frame = cv2.rotate(frame, cv2.ROTATE_180)
-            elif rotate_option == "270°":
-                frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = pose.process(frame_rgb)
-
-            frame_num += 1
+        if file_extension in allowed_image_types:
+            # Process Image
+            file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
+            image = cv2.imdecode(file_bytes, 1)
+            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = pose.process(image_rgb)
 
             if results.pose_landmarks:
-                mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
                 landmarks = results.pose_landmarks.landmark
-
                 hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
                 knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
                 ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
@@ -242,51 +116,117 @@ if uploaded_file is not None:
                 right_elbow_angle = calculate_angle(shoulder, elbow, wrist)
                 right_shoulder_angle = calculate_angle(neck, shoulder, elbow)
 
-                knee_angles.append(right_knee_angle)
-                elbow_angles.append(right_elbow_angle)
-                shoulder_angles.append(right_shoulder_angle)
+                score = posture_score(right_knee_angle, right_elbow_angle, right_shoulder_angle)
 
-                if right_knee_angle > best_knee_angle:
-                    best_knee_angle = right_knee_angle
-                    best_knee_frame = frame_num
-                if right_elbow_angle < worst_elbow_angle:
-                    worst_elbow_angle = right_elbow_angle
-                    worst_elbow_frame = frame_num
+                st.subheader("📈 Athlete Stats:")
+                st.markdown(f"""
+                - **Right Knee Angle:** {colorize_angle(right_knee_angle, 'knee')}
+                - **Right Elbow Angle:** {colorize_angle(right_elbow_angle, 'elbow')}
+                - **Right Shoulder Angle:** {colorize_angle(right_shoulder_angle, 'shoulder')}
+                """, unsafe_allow_html=True)
 
-                stframe.image(frame, channels="BGR")
+                st.subheader("🏅 Athlete Score")
+                st.markdown(colorize_score(score), unsafe_allow_html=True)
 
-        cap.release()
+        else:
+            # Process Video
+            tfile = tempfile.NamedTemporaryFile(delete=False)
+            tfile.write(uploaded_file.read())
+            cap = cv2.VideoCapture(tfile.name)
+            stframe = st.empty()
 
-        if knee_angles and elbow_angles and shoulder_angles:
-            avg_knee = np.mean(knee_angles)
-            avg_elbow = np.mean(elbow_angles)
-            avg_shoulder = np.mean(shoulder_angles)
-            best_knee_time = best_knee_frame / fps
-            worst_elbow_time = worst_elbow_frame / fps
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_num = 0
+            knee_angles, elbow_angles, shoulder_angles = [], [], []
+            best_knee_angle, worst_elbow_angle = 0, 180
+            best_knee_frame, worst_elbow_frame = 0, 0
 
-            score = posture_score(avg_knee, avg_elbow, avg_shoulder)
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-            st.subheader("🏆 Posture Quality Assessment")
-            st.write(", ".join([
-                "Good Knee Posture" if 160 <= avg_knee <= 180 else "Needs Improvement",
-                "Good Elbow Posture" if 70 <= avg_elbow <= 110 else "Needs Improvement",
-                "Good Shoulder Posture" if 70 <= avg_shoulder <= 110 else "Needs Improvement"
-            ]))
+                frame = cv2.resize(frame, (640, 480))
 
-            st.subheader("🏅 Athlete Score")
-            st.markdown(colorize_score(score), unsafe_allow_html=True)
+                if rotate_option == "90°":
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+                elif rotate_option == "180°":
+                    frame = cv2.rotate(frame, cv2.ROTATE_180)
+                elif rotate_option == "270°":
+                    frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-            report_df = generate_report(avg_knee, avg_elbow, avg_shoulder,
-                                         best_knee_angle, best_knee_time,
-                                         worst_elbow_angle, worst_elbow_time,
-                                         score)
-            csv = report_df.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Download Performance Report",
-                data=csv,
-                file_name='performance_report.csv',
-                mime='text/csv'
-            )
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = pose.process(frame_rgb)
+                frame_num += 1
 
-    else:
-        st.error("Unsupported file type.")
+                if results.pose_landmarks:
+                    mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+                    landmarks = results.pose_landmarks.landmark
+                    hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+                    knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
+                    ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
+                    shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+                    elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+                    wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+                    neck = [(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x + landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x) / 2,
+                            (landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y + landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y) / 2]
+
+                    right_knee_angle = calculate_angle(hip, knee, ankle)
+                    right_elbow_angle = calculate_angle(shoulder, elbow, wrist)
+                    right_shoulder_angle = calculate_angle(neck, shoulder, elbow)
+
+                    knee_angles.append(right_knee_angle)
+                    elbow_angles.append(right_elbow_angle)
+                    shoulder_angles.append(right_shoulder_angle)
+
+                    if right_knee_angle > best_knee_angle:
+                        best_knee_angle = right_knee_angle
+                        best_knee_frame = frame_num
+                    if right_elbow_angle < worst_elbow_angle:
+                        worst_elbow_angle = right_elbow_angle
+                        worst_elbow_frame = frame_num
+
+                    stframe.image(frame, channels="BGR")
+
+            cap.release()
+
+            if knee_angles and elbow_angles and shoulder_angles:
+                avg_knee = np.mean(knee_angles)
+                avg_elbow = np.mean(elbow_angles)
+                avg_shoulder = np.mean(shoulder_angles)
+                best_knee_time = best_knee_frame / fps
+                worst_elbow_time = worst_elbow_frame / fps
+
+                score = posture_score(avg_knee, avg_elbow, avg_shoulder)
+
+                st.subheader("🏅 Athlete Score")
+                st.markdown(colorize_score(score), unsafe_allow_html=True)
+
+                report_df = generate_report(avg_knee, avg_elbow, avg_shoulder, best_knee_angle, best_knee_time, worst_elbow_angle, worst_elbow_time, score)
+                csv = report_df.to_csv(index=False).encode('utf-8')
+                st.download_button(label="📥 Download Performance Report", data=csv, file_name='performance_report.csv', mime='text/csv')
+
+elif mode == "Live Camera":
+    st.write("Start your webcam and we'll detect your pose live!")
+    run = st.checkbox('Start Camera')
+
+    FRAME_WINDOW = st.image([])
+    camera = cv2.VideoCapture(0)
+
+    while run:
+        ret, frame = camera.read()
+        if not ret:
+            st.error("Failed to grab frame from camera.")
+            break
+
+        frame = cv2.flip(frame, 1)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = pose.process(frame_rgb)
+
+        if results.pose_landmarks:
+            mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+        FRAME_WINDOW.image(frame, channels="BGR")
+
+    camera.release()
