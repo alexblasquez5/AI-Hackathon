@@ -56,7 +56,7 @@ def generate_report(avg_knee, avg_elbow, avg_shoulder, best_knee, best_knee_time
         if 160 <= avg <= 180 or 70 <= avg <= 110:
             quality.append(f"Good {joint} Posture")
         else:
-            quality.append("Needs Improvement")
+            quality.append(f"Needs Improvement on {joint}")
     data = {
         "Metric": [
             "Avg Right Knee Angle", "Avg Right Elbow Angle", "Avg Right Shoulder Angle",
@@ -72,6 +72,23 @@ def generate_report(avg_knee, avg_elbow, avg_shoulder, best_knee, best_knee_time
         ]
     }
     return pd.DataFrame(data)
+
+def generate_posture_quality(avg_knee, avg_elbow, avg_shoulder):
+    """Create live posture quality list for display"""
+    quality = []
+    if 160 <= avg_knee <= 180:
+        quality.append("✅ Good Knee Posture")
+    else:
+        quality.append("⚠️ Needs Improvement on Knee")
+    if 70 <= avg_elbow <= 110:
+        quality.append("✅ Good Elbow Posture")
+    else:
+        quality.append("⚠️ Needs Improvement on Elbow")
+    if 70 <= avg_shoulder <= 110:
+        quality.append("✅ Good Shoulder Posture")
+    else:
+        quality.append("⚠️ Needs Improvement on Shoulder")
+    return quality
 
 # --- MediaPipe setup ---
 mp_pose = mp.solutions.pose
@@ -95,7 +112,7 @@ if mode == "Upload Image/Video":
         file_extension = os.path.splitext(uploaded_file.name)[1][1:].lower()
 
         if file_extension in allowed_image_types:
-            # Process Image
+            # --- Process Image ---
             file_bytes = np.frombuffer(uploaded_file.read(), np.uint8)
             image = cv2.imdecode(file_bytes, 1)
             image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -117,6 +134,7 @@ if mode == "Upload Image/Video":
                 right_shoulder_angle = calculate_angle(neck, shoulder, elbow)
 
                 score = posture_score(right_knee_angle, right_elbow_angle, right_shoulder_angle)
+                posture_quality = generate_posture_quality(right_knee_angle, right_elbow_angle, right_shoulder_angle)
 
                 st.subheader("📈 Athlete Stats:")
                 st.markdown(f"""
@@ -125,11 +143,17 @@ if mode == "Upload Image/Video":
                 - **Right Shoulder Angle:** {colorize_angle(right_shoulder_angle, 'shoulder')}
                 """, unsafe_allow_html=True)
 
-                st.subheader("🏅 Athlete Score")
+                st.subheader("Posture Quality Assessment")
+                for quality in posture_quality:
+                    st.write(quality)
+
+                st.subheader("Athlete Score")
                 st.markdown(colorize_score(score), unsafe_allow_html=True)
 
+                st.image(image, channels="BGR", caption="Processed Image")
+
         else:
-            # Process Video
+            # --- Process Video ---
             tfile = tempfile.NamedTemporaryFile(delete=False)
             tfile.write(uploaded_file.read())
             cap = cv2.VideoCapture(tfile.name)
@@ -199,34 +223,18 @@ if mode == "Upload Image/Video":
                 worst_elbow_time = worst_elbow_frame / fps
 
                 score = posture_score(avg_knee, avg_elbow, avg_shoulder)
+                posture_quality = generate_posture_quality(avg_knee, avg_elbow, avg_shoulder)
 
-                st.subheader("🏅 Athlete Score")
+                st.subheader("Posture Quality Assessment")
+                for quality in posture_quality:
+                    st.write(quality)
+
+                st.subheader("Athlete Score")
                 st.markdown(colorize_score(score), unsafe_allow_html=True)
 
                 report_df = generate_report(avg_knee, avg_elbow, avg_shoulder, best_knee_angle, best_knee_time, worst_elbow_angle, worst_elbow_time, score)
                 csv = report_df.to_csv(index=False).encode('utf-8')
                 st.download_button(label="📥 Download Performance Report", data=csv, file_name='performance_report.csv', mime='text/csv')
 
-elif mode == "Live Camera":
-    st.write("Start your webcam and we'll detect your pose live!")
-    run = st.checkbox('Start Camera')
-
-    FRAME_WINDOW = st.image([])
-    camera = cv2.VideoCapture(0)
-
-    while run:
-        ret, frame = camera.read()
-        if not ret:
-            st.error("Failed to grab frame from camera.")
-            break
-
-        frame = cv2.flip(frame, 1)
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = pose.process(frame_rgb)
-
-        if results.pose_landmarks:
-            mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
-        FRAME_WINDOW.image(frame, channels="BGR")
-
-    camera.release()
+else:
+    st.info("Live Camera mode coming soon!")
