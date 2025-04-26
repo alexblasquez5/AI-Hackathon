@@ -6,6 +6,9 @@ import tempfile
 import os
 import pandas as pd
 
+from detectors import MovementDetector
+
+
 # --- Helper functions ---
 
 def calculate_angle(a, b, c):
@@ -80,6 +83,8 @@ mp_drawing = mp.solutions.drawing_utils
 
 # --- Streamlit setup ---
 st.title("Athlete Pose Analyzer")
+
+movement_detector = MovementDetector()
 
 mode = st.sidebar.radio("Select Mode:", ("Upload Image/Video", "Live Camera"))
 
@@ -227,6 +232,12 @@ elif mode == "Live Camera":
         if results.pose_landmarks:
             mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
+            # 🆕 Improved detection
+            detection = movement_detector.detect(results.pose_landmarks)
+            if detection:
+                st.success(detection)
+
         FRAME_WINDOW.image(frame, channels="BGR")
+
 
     camera.release()
