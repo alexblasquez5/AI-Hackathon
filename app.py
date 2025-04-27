@@ -16,6 +16,10 @@ from detectors import (
     generate_posture_quality
 )
 
+from detectorsLive import (
+    MovementDetector
+)
+
 # --- Constants ---
 KNEE_THRESHOLD = 30
 ELBOW_THRESHOLD = 30
@@ -40,6 +44,9 @@ def detect_movement(knee_angles, elbow_angles, hip_ys, shoulder_ys):
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
 mp_drawing = mp.solutions.drawing_utils
+
+movement_detector = MovementDetector()
+mode = st.sidebar.selectbox("Select Mode", ("Upload Image/Video", "Live Camera"))
 
 # --- Streamlit App ---
 st.title("Athlete Pose Analyzer + Smarter Movement Detection")
@@ -236,3 +243,34 @@ if uploaded_file:
 
             csv = report_df.to_csv(index=False).encode('utf-8')
             st.download_button(label="Download Full Performance Report", data=csv, file_name='performance_report.csv', mime='text/csv')
+
+
+elif mode == "Live Camera":
+    st.write("Start your webcam and we'll detect your pose live!")
+    run = st.checkbox('Start Camera')
+
+    FRAME_WINDOW = st.image([])
+    camera = cv2.VideoCapture(0)
+
+    while run:
+        ret, frame = camera.read()
+        if not ret:
+            st.error("Failed to grab frame from camera.")
+            break
+
+        frame = cv2.flip(frame, 1)
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        results = pose.process(frame_rgb)
+
+        if results.pose_landmarks:
+            mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+            # 🆕 Improved detection
+            detection = movement_detector.detect(results.pose_landmarks)
+            if detection:
+                st.success(detection)
+
+        FRAME_WINDOW.image(frame, channels="BGR")
+
+
+    camera.release()
