@@ -16,6 +16,26 @@ from detectors import (
     generate_posture_quality
 )
 
+# --- Constants ---
+KNEE_THRESHOLD = 30
+ELBOW_THRESHOLD = 30
+HIP_MOVEMENT_THRESHOLD = 0.08
+SHOULDER_MOVEMENT_THRESHOLD = 0.04
+
+# --- Helper: Detect Movement Type ---
+def detect_movement(knee_angles, elbow_angles, hip_ys, shoulder_ys):
+    knee_variation = max(knee_angles) - min(knee_angles)
+    elbow_variation = max(elbow_angles) - min(elbow_angles)
+    hip_variation = max(hip_ys) - min(hip_ys)
+    shoulder_variation = max(shoulder_ys) - min(shoulder_ys)
+
+    if elbow_variation > ELBOW_THRESHOLD and shoulder_variation > SHOULDER_MOVEMENT_THRESHOLD:
+        return "Push-ups"
+    elif knee_variation > KNEE_THRESHOLD and hip_variation > HIP_MOVEMENT_THRESHOLD:
+        return "Squats"
+    else:
+        return "Unknown Movement"
+
 # --- MediaPipe setup ---
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
@@ -110,26 +130,11 @@ if uploaded_file:
             best_knee_time = best_knee_frame / fps
             worst_elbow_time = worst_elbow_frame / fps
 
-            score = posture_score(avg_knee, avg_elbow, avg_shoulder)
+            raw_score = posture_score(avg_knee, avg_elbow, avg_shoulder)
+            score = round((raw_score / 90) * 100)  # Rescale to 100
             posture_quality = generate_posture_quality(avg_knee, avg_elbow, avg_shoulder)
 
-            # --- Smarter Movement Detection ---
-            knee_variation = max(knee_angles) - min(knee_angles)
-            elbow_variation = max(elbow_angles) - min(elbow_angles)
-            hip_variation = max(hip_ys) - min(hip_ys)
-            shoulder_variation = max(shoulder_ys) - min(shoulder_ys)
-
-            knee_threshold = 30
-            elbow_threshold = 30
-            hip_movement_threshold = 0.08
-            shoulder_movement_threshold = 0.04
-
-            if elbow_variation > elbow_threshold and shoulder_variation > shoulder_movement_threshold:
-                detected_movement = "Push-ups"
-            elif knee_variation > knee_threshold and hip_variation > hip_movement_threshold:
-                detected_movement = "Squats"
-            else:
-                detected_movement = "Unknown Movement"
+            detected_movement = detect_movement(knee_angles, elbow_angles, hip_ys, shoulder_ys)
 
             # --- Display Results ---
             st.subheader("Posture Quality Assessment")
@@ -154,7 +159,7 @@ if uploaded_file:
                     f"{int(avg_knee)}°", f"{int(avg_elbow)}°", f"{int(avg_shoulder)}°",
                     f"{int(best_knee_angle)}°", f"{best_knee_time:.2f} sec",
                     f"{int(worst_elbow_angle)}°", f"{worst_elbow_time:.2f} sec",
-                    ", ".join(posture_quality), f"{score} / 90", detected_movement
+                    ", ".join(posture_quality), f"{score} / 100", detected_movement
                 ]
             })
 

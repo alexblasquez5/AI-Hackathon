@@ -34,13 +34,14 @@ def posture_score(avg_knee, avg_elbow, avg_shoulder):
     return score
 
 def colorize_score(score):
-    if score >= 75:
+    if score >= 85:
         color = "green"
-    elif score >= 45:
+    elif score >= 60:
         color = "orange"
     else:
         color = "red"
-    return f"<span style='color:{color}; font-size:24px'><b>{score} / 90</b></span>"
+    return f"<span style='color:{color}; font-size:24px'><b>{score} / 100</b></span>"
+
 
 def generate_posture_quality(avg_knee, avg_elbow, avg_shoulder):
     quality = []
